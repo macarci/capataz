@@ -100,7 +100,8 @@ module Capataz
       begin
         buffer = Parser::Source::Buffer.new('code')
         buffer.source = code
-        Capataz::Rewriter.new(errors: errors).rewrite(buffer, Parser::CurrentRuby.new.parse(buffer))
+        ast = Parser::CurrentRuby.new.parse(buffer)
+        Capataz::Rewriter.new(errors: errors).rewrite(buffer, ast)
       rescue => ex
         errors << ex.message
       end
@@ -118,8 +119,10 @@ module Capataz
       buffer = Parser::Source::Buffer.new('code')
       buffer.source = code
       begin
-        Capataz::Rewriter.new(options).rewrite(buffer, Parser::CurrentRuby.new.parse(buffer))
+        fail 'unrecognizable code' unless (ast = Parser::CurrentRuby.new.parse(buffer))
+        code = Capataz::Rewriter.new(options).rewrite(buffer, ast)
       rescue Exception => ex
+        code = nil
         if (logs = options[:logs]).is_a?(Hash) &&
           (errors = (logs[:errors] ||= [])).is_a?(Array)
           errors << "syntax error: #{ex.message}"
@@ -127,6 +130,7 @@ module Capataz
           raise ex
         end
       end
+      code
     end
 
     def handle(obj, options = {})
