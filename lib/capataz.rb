@@ -8,17 +8,54 @@ module Capataz
 
   class << self
 
+    def config(&block)
+      @config ||=
+          {
+              denied_declarations: Set.new,
+              allowed_constants: Set.new,
+              denied_methods: Set.new,
+              instances: {},
+              modules: {}
+          }
+      class_eval(&block) if block
+      @config
+    end
+
     def eval(string, *binding_filename_lineno)
       string = rewrite(string)
       super
     end
 
-    def disable(*args)
-      @disable = args.first.to_s.to_i.to_b
+    def rewrite(code, options = {})
+      return code if Capataz.disable?
+      options ||= {}
+      options[:halt_on_error] = true if options[:halt_on_error].nil?
+      if (locals = options[:locals])
+        locals = [locals] unless locals.is_a?(Enumerable)
+        locals.each { |local| code = "#{local} ||= nil\r\n" + code }
+      end
+      buffer = Parser::Source::Buffer.new('code')
+      buffer.source = code
+      begin
+        Capataz::Rewriter.new(options).rewrite(buffer, Parser::CurrentRuby.new.parse(buffer))
+      rescue Exception => ex
+        if (logs = options[:logs]).is_a?(Hash) &&
+            (errors = (logs[:errors] ||= [])).is_a?(Array)
+          errors << "syntax error: #{ex.message}"
+        else
+          raise ex
+        end
+      end
     end
 
-    def disable?
-      @disable
+
+    # config
+    def set_max_allowed_iterations(value)
+      @max_allowed_iteration = value
+    end
+
+    def disable(*args)
+      @disable = args.first.to_s.to_i.to_b
     end
 
     def deny_declarations_of(*symbols)
@@ -52,17 +89,43 @@ module Capataz
       store_options(:modules, :deny, types, options) { |type| type.is_a?(Module) }
     end
 
-    def config(&block)
-      @config ||=
-        {
-          denied_declarations: Set.new,
-          allowed_constants: Set.new,
-          denied_methods: Set.new,
-          instances: {},
-          modules: {}
-        }
-      class_eval(&block) if block
-      @config
+
+
+    # control en tiempo de compilación (interpretación)
+    def disable?
+      @disable
+    end
+
+    def allows_invocation_of(method)
+      method = method.to_s.to_sym unless method.is_a?(Symbol)
+      return false if @config[:denied_methods].include?(method)
+      true
+    end
+
+    def can_declare?(symbol)
+      (set = @config[:denied_declarations]).empty? || !set.include?(symbol)
+    end
+
+    def validate(code)
+      errors = []
+      begin
+        buffer = Parser::Source::Buffer.new('code')
+        buffer.source = code
+        Capataz::Rewriter.new(errors: errors).rewrite(buffer, Parser::CurrentRuby.new.parse(buffer))
+      rescue => ex
+        errors << ex.message
+      end
+      errors
+    end
+
+
+    # control en tiempo de ejecución
+    def max_allowed_iterations
+      if @max_allowed_iteration
+        @max_allowed_iteration
+      else
+        :inf
+      end
     end
 
     def instance_response_to?(instance, *args)
@@ -81,56 +144,8 @@ module Capataz
       instance.respond_to?(*args)
     end
 
-    def allows_invocation_of(method)
-      method = method.to_s.to_sym unless method.is_a?(Symbol)
-      return false if @config[:denied_methods].include?(method)
-      true
-    end
-
     def allowed_constant?(const)
       (set = @config[:allowed_constants]) && set.include?(const)
-    end
-
-    def can_declare?(symbol)
-      (set = @config[:denied_declarations]).empty? || !set.include?(symbol)
-    end
-
-    def validate(code)
-      errors = []
-      begin
-        buffer = Parser::Source::Buffer.new('code')
-        buffer.source = code
-        ast = Parser::CurrentRuby.new.parse(buffer)
-        Capataz::Rewriter.new(errors: errors).rewrite(buffer, ast)
-      rescue => ex
-        errors << ex.message
-      end
-      errors
-    end
-
-    def rewrite(code, options = {})
-      return code if Capataz.disable?
-      options ||= {}
-      options[:halt_on_error] = true if options[:halt_on_error].nil?
-      if (locals = options[:locals])
-        locals = [locals] unless locals.is_a?(Enumerable)
-        locals.each { |local| code = "#{local} ||= nil\r\n" + code }
-      end
-      buffer = Parser::Source::Buffer.new('code')
-      buffer.source = code
-      begin
-        fail 'unrecognizable code' unless (ast = Parser::CurrentRuby.new.parse(buffer))
-        code = Capataz::Rewriter.new(options).rewrite(buffer, ast)
-      rescue Exception => ex
-        code = nil
-        if (logs = options[:logs]).is_a?(Hash) &&
-          (errors = (logs[:errors] ||= [])).is_a?(Array)
-          errors << "syntax error: #{ex.message}"
-        else
-          raise ex
-        end
-      end
-      code
     end
 
     def handle(obj, options = {})
