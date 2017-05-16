@@ -17,6 +17,10 @@ module Capataz
       @block_iter_counter = 0
 
       @capatized_nodes = Set.new
+      @decapatized_nodes = Set.new
+
+      @curr_nodes_branch = []
+      @limited_invocation_methods = []
     end
 
     def rewrite(source_buffer, ast)
@@ -37,6 +41,10 @@ module Capataz
       new_source = @source_rewriter.process
       @block_iter_counter.downto(1) do |i|
         new_source = "block_iter_counter_#{i} = 0\n#{new_source}"
+      end
+
+      @limited_invocation_methods.each do |method|
+        new_source = "invocations_counter_for_#{method} = 0\n#{new_source}"
       end
 
       new_source
@@ -106,6 +114,7 @@ module Capataz
     def on_send(node)
       #@instruction_counter += 1
 
+      @curr_nodes_branch.push(node)
 
       super
       method_name = node.children[1]
@@ -123,7 +132,22 @@ module Capataz
         insert_before(node.location.expression, "::Capataz.handle(self).#{prefix}")
       end
 
+      if node.type == :send
+        unless Capataz.max_allowed_invoc_any == :inf and Capataz.max_allowed_invocations(node.children[1])  == :inf
+          if Capataz.max_allowed_invoc_any != :inf
+            Capataz.set_max_allowed_invocations(node.children[1], Capataz.max_allowed_invoc_any)
+          end
 
+          unless @limited_invocation_methods.include?(node.children[1])
+            @limited_invocation_methods.push(node.children[1])
+          end
+
+          @source_rewriter.insert_before_multi(@curr_nodes_branch[0].location.expression,
+                                               new_invocation(node.children[1]))
+        end
+      end
+
+      @curr_nodes_branch.pop
 
       len = node.children.length
       if len > 2
@@ -152,8 +176,10 @@ module Capataz
     end
 
     def on_lvasgn(node)
+      @curr_nodes_branch.push(node)
       @instruction_counter += 1
       super
+      @curr_nodes_branch.pop
       capatize(node.children[1])
     end
 
@@ -186,7 +212,6 @@ module Capataz
       report_error('can not access instance variables') unless Capataz.can_declare?(:ivar)
       super
     end
-
 
     def on_ivar(_)
       report_error('can not access instance variables') unless Capataz.can_declare?(:ivar)
@@ -277,6 +302,11 @@ module Capataz
       > Capataz.max_allowed_iterations\n"
     end
 
+    def new_invocation(method)
+
+      m = method
+      "invocations_counter_for_#{m} += 1\nfail \"ERROR: Maximum allowed invocations for '#{m}' exceeded\" if invocations_counter_for_#{m} > Capataz.max_allowed_invocations(:#{m})\n"
+    end
 
     def rewrite_block_symbol_pass(node, len)
 

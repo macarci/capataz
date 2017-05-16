@@ -54,6 +54,23 @@ module Capataz
       @max_allowed_iteration = value
     end
 
+    def set_max_allowed_invocations(*pairs)
+
+      unless @max_allowed_invocations
+        @max_allowed_invocations = {}
+      end
+
+      pairs = pairs.slice_when { |i, _| i.is_a?(Integer) or i == :inf }
+
+      pairs.each do |method, value|
+        @max_allowed_invocations[method] = value
+      end
+    end
+
+    def set_max_allowed_invoc_any(value)
+      @max_allowed_invoc_any = value
+    end
+
     def disable(*args)
       @disable = args.first.to_s.to_i.to_b
     end
@@ -118,11 +135,32 @@ module Capataz
       errors
     end
 
-
     # control en tiempo de ejecución
     def max_allowed_iterations
       if @max_allowed_iteration
         @max_allowed_iteration
+      else
+        :inf
+      end
+    end
+
+    def max_allowed_invocations(method)
+
+      unless @max_allowed_invocations
+        @max_allowed_invocations = {}
+      end
+
+      value = @max_allowed_invocations[method]
+      if value
+        value
+      else
+        :inf
+      end
+    end
+
+    def max_allowed_invoc_any
+      if @max_allowed_invoc_any
+        @max_allowed_invoc_any
       else
         :inf
       end
