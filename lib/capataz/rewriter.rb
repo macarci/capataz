@@ -129,11 +129,6 @@ module Capataz
       end
     end
 
-    def on_while_post(node)
-
-      #insert_after(node.children[1].location.end, "\n#{inc_block_iter_counter}")
-      super
-    end
 
     def on_until(node)
 
@@ -148,12 +143,6 @@ module Capataz
       end
     end
 
-    def on_until_post(node)
-
-      #insert_after(node.children[1].location.begin, "\n#{inc_block_iter_counter}")
-      super
-
-    end
 
     def on_send(node)
       #@instruction_counter += 1
@@ -209,8 +198,6 @@ module Capataz
             end
           else
             @invocations_insertions << [:insert_before_multi, @curr_branch_nodes[0].location.expression, new_invocation(node.children[1])]
-            # @source_rewriter.insert_before_multi(@curr_branch_nodes[0].location.expression,
-            #                                      new_invocation(node.children[1]))
           end
         end
       end
@@ -365,12 +352,6 @@ module Capataz
           @source_rewriter.insert_after_multi(node.location.expression, ').capataz_slave')
         end
       end
-
-      # ORIGINAL CODE
-      # unless node.type == :hash or @decapatized_nodes.include?(node)
-      #     @source_rewriter.insert_before_multi(node.location.expression, '(')
-      #     @source_rewriter.insert_after_multi(node.location.expression, ').capataz_slave')
-      # end
     end
 
     def const_from(node)
