@@ -48,7 +48,6 @@ module Capataz
       end
     end
 
-
     # config
     def set_max_allowed_iterations(value)
       @max_allowed_iteration = value
@@ -106,9 +105,7 @@ module Capataz
       store_options(:modules, :deny, types, options) { |type| type.is_a?(Module) }
     end
 
-
-
-    # control en tiempo de compilación (interpretación)
+    # compiling time control
     def disable?
       @disable
     end
@@ -135,7 +132,7 @@ module Capataz
       errors
     end
 
-    # control en tiempo de ejecución
+    # execution time control
     def max_allowed_iterations
       if @max_allowed_iteration
         @max_allowed_iteration
@@ -196,11 +193,13 @@ module Capataz
       end
     end
 
-    private
+
 
     def allow_method_overrides
       true #TODO Setup on config
     end
+
+    private
 
     def allowed_method?(options, instance, method)
       if (allow = options[:allow])
