@@ -19,8 +19,12 @@ module Capataz
       @capatized_nodes = Set.new
       @decapatized_nodes = Set.new
 
-      @curr_nodes_branch = []
+      @curr_branch_nodes = []
       @limited_invocation_methods = []
+      @invocations_insertions = []
+
+      @last_signif_node_pos = -1
+      @last_signif_node_type = nil
     end
 
     def rewrite(source_buffer, ast)
@@ -32,6 +36,15 @@ module Capataz
 
       process(ast)
 
+      @invocations_insertions.each do
+        |invocation|
+        if invocation[0] == :insert_before_multi
+          @source_rewriter.insert_before_multi(invocation[1], invocation[2])
+        elsif invocation[0] == :insert_after_multi
+          @source_rewriter.insert_after_multi(invocation[1], invocation[2])
+        end
+      end
+
       if @instruction_counter > @max_instructions_allowed
         report_error('number of allowed instructions exceeded')
       end
@@ -40,11 +53,11 @@ module Capataz
 
       new_source = @source_rewriter.process
       @block_iter_counter.downto(1) do |i|
-        new_source = "block_iter_counter_#{i} = 0\n#{new_source}"
+        new_source = "@block_iter_counter_#{i} = 0\n#{new_source}"
       end
 
       @limited_invocation_methods.each do |method|
-        new_source = "invocations_counter_for_#{method} = 0\n#{new_source}"
+        new_source = "@invocations_counter_for_#{method} = 0\n#{new_source}"
       end
 
       new_source
@@ -70,14 +83,31 @@ module Capataz
         insert_after(node.location.begin, "\n#{inc_block_iter_counter}")
       end
 
+      @curr_branch_nodes.push(node)
+      @last_signif_node_pos = @curr_branch_nodes.length - 1
+      @last_signif_node_type = node.type
       super
+      @curr_branch_nodes.pop
+      if @curr_branch_nodes.length == 0
+        @last_signif_node_pos = -1
+      end
     end
 
     def on_for(node)
 
-      insert_after(node.children[1].location.end, "\n#{inc_block_iter_counter}")
+      if node.children[1].location.end
+        insert_after(node.children[1].location.end, "\n#{inc_block_iter_counter}")
+      else
+        insert_after(node.children[1].location.expression, "\n#{inc_block_iter_counter}")
+      end
+      @curr_branch_nodes.push(node)
+      @last_signif_node_pos = @curr_branch_nodes.length - 1
+      @last_signif_node_type = node.type
       super
-
+      @curr_branch_nodes.pop
+      if @curr_branch_nodes.length == 0
+        @last_signif_node_pos = -1
+      end
     end
 
     def on_kwbegin(node)
@@ -89,32 +119,35 @@ module Capataz
     def on_while(node)
 
       insert_after(node.children[0].location.expression, "\n#{inc_block_iter_counter}")
+      @curr_branch_nodes.push(node)
+      @last_signif_node_pos = @curr_branch_nodes.length - 1
+      @last_signif_node_type = node.type
       super
+      @curr_branch_nodes.pop
+      if @curr_branch_nodes.length == 0
+        @last_signif_node_pos = -1
+      end
     end
 
-    def on_while_post(node)
-
-      #insert_after(node.children[1].location.end, "\n#{inc_block_iter_counter}")
-      super
-    end
 
     def on_until(node)
 
       insert_after(node.children[0].location.expression, "\n#{inc_block_iter_counter}")
+      @curr_branch_nodes.push(node)
+      @last_signif_node_pos = @curr_branch_nodes.length - 1
+      @last_signif_node_type = node.type
       super
+      @curr_branch_nodes.pop
+      if @curr_branch_nodes.length == 0
+        @last_signif_node_pos = -1
+      end
     end
 
-    def on_until_post(node)
-
-      #insert_after(node.children[1].location.begin, "\n#{inc_block_iter_counter}")
-      super
-
-    end
 
     def on_send(node)
       #@instruction_counter += 1
 
-      @curr_nodes_branch.push(node)
+      @curr_branch_nodes.push(node)
 
       super
       method_name = node.children[1]
@@ -142,12 +175,37 @@ module Capataz
             @limited_invocation_methods.push(node.children[1])
           end
 
-          @source_rewriter.insert_before_multi(@curr_nodes_branch[0].location.expression,
-                                               new_invocation(node.children[1]))
+          if @last_signif_node_pos >= 0
+            if @last_signif_node_type == :for
+              if @curr_branch_nodes[@last_signif_node_pos + 1] == @curr_branch_nodes[@last_signif_node_pos].children[1]
+                @invocations_insertions << [:insert_before_multi, @curr_branch_nodes[@last_signif_node_pos].location.expression, new_invocation(node.children[1])]
+              elsif @curr_branch_nodes[@last_signif_node_pos + 1] == @curr_branch_nodes[@last_signif_node_pos].children[2]
+                @invocations_insertions << [:insert_before_multi, @curr_branch_nodes[@last_signif_node_pos + 1].location.expression, new_invocation(node.children[1])]
+              end
+            elsif @last_signif_node_type == :while or @last_signif_node_type == :until
+                @invocations_insertions << [:insert_after_multi, @curr_branch_nodes[@last_signif_node_pos].children[0].location.expression, "\n" + new_invocation(node.children[1])]
+            elsif @last_signif_node_type == :if
+              if @curr_branch_nodes[@last_signif_node_pos + 1] == @curr_branch_nodes[@last_signif_node_pos].children[0]
+                @invocations_insertions << [:insert_before_multi, @curr_branch_nodes[@last_signif_node_pos].location.expression, new_invocation(node.children[1])]
+              elsif @curr_branch_nodes[@last_signif_node_pos + 1] == @curr_branch_nodes[@last_signif_node_pos].children[1] or \
+              @curr_branch_nodes[@last_signif_node_pos + 1] == @curr_branch_nodes[@last_signif_node_pos].children[2]
+                @invocations_insertions << [:insert_before_multi, @curr_branch_nodes[@last_signif_node_pos + 1].location.expression, new_invocation(node.children[1])]
+              end
+            elsif @last_signif_node_type == :block
+              @invocations_insertions << [:insert_before_multi, node.location.expression, new_invocation(node.children[1])]
+            elsif @last_signif_node_type == :lvasgn
+              @invocations_insertions << [:insert_before_multi, @curr_branch_nodes[@last_signif_node_pos].location.expression, new_invocation(node.children[1])]
+            end
+          else
+            @invocations_insertions << [:insert_before_multi, @curr_branch_nodes[0].location.expression, new_invocation(node.children[1])]
+          end
         end
       end
 
-      @curr_nodes_branch.pop
+      @curr_branch_nodes.pop
+      if @curr_branch_nodes.length == 0
+        @last_signif_node_pos = -1
+      end
 
       len = node.children.length
       if len > 2
@@ -176,11 +234,33 @@ module Capataz
     end
 
     def on_lvasgn(node)
-      @curr_nodes_branch.push(node)
+      @curr_branch_nodes.push(node)
       @instruction_counter += 1
+      if @curr_branch_nodes.length > 1
+        if @curr_branch_nodes[@curr_branch_nodes.length - 2].type != :for or \
+           @curr_branch_nodes[@curr_branch_nodes.length - 2].children[0] != node
+          @last_signif_node_pos = @curr_branch_nodes.length - 1
+          @last_signif_node_type = node.type
+        end
+      end
+
       super
-      @curr_nodes_branch.pop
+      @curr_branch_nodes.pop
+      if @curr_branch_nodes.length == 0
+        @last_signif_node_pos = -1
+      end
       capatize(node.children[1])
+    end
+
+    def on_if(node)
+      @curr_branch_nodes.push(node)
+      @last_signif_node_pos = @curr_branch_nodes.length - 1
+      @last_signif_node_type = node.type
+      super
+      @curr_branch_nodes.pop
+      if @curr_branch_nodes.length == 0
+        @last_signif_node_pos = -1
+      end
     end
 
     def on_class(node)
@@ -272,12 +352,6 @@ module Capataz
           @source_rewriter.insert_after_multi(node.location.expression, ').capataz_slave')
         end
       end
-
-      # ORIGINAL CODE
-      # unless node.type == :hash or @decapatized_nodes.include?(node)
-      #     @source_rewriter.insert_before_multi(node.location.expression, '(')
-      #     @source_rewriter.insert_after_multi(node.location.expression, ').capataz_slave')
-      # end
     end
 
     def const_from(node)
@@ -296,16 +370,16 @@ module Capataz
 
       @block_iter_counter += 1
       bc = @block_iter_counter
-      "block_iter_counter_#{bc} += 1\nfail\
+      "@block_iter_counter_#{bc} += 1\nfail\
       \"ERROR: Maximum allowed iterations exceeded\" \
-      if block_iter_counter_#{bc} \
+      if @block_iter_counter_#{bc} \
       > Capataz.max_allowed_iterations\n"
     end
 
     def new_invocation(method)
 
       m = method
-      "invocations_counter_for_#{m} += 1\nfail \"ERROR: Maximum allowed invocations for '#{m}' exceeded\" if invocations_counter_for_#{m} > Capataz.max_allowed_invocations(:#{m})\n"
+      "@invocations_counter_for_#{m} += 1\nfail \"ERROR: Maximum allowed invocations for '#{m}' exceeded\" if @invocations_counter_for_#{m} > Capataz.max_allowed_invocations(:#{m})\n"
     end
 
     def rewrite_block_symbol_pass(node, len)
