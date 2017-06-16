@@ -25,6 +25,11 @@ module Capataz
       @source_rewriter.process
     end
 
+    def on_pair(node)
+      super
+      decapatize(node.children[1])
+    end
+
     def on_array(node)
       super
       node.children.each { |child| decapatize(child) }

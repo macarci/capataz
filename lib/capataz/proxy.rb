@@ -63,14 +63,11 @@ module Capataz
   class HashProxy < Proxy
 
     def []=(key, value)
-      key = key.capataz_slave if key.capataz_proxy?
-      @obj[key] = value
+      @obj[key.capataz_slave] = value.capataz_slave
     end
 
     def [](key)
-      key = key.capataz_slave if key.capataz_proxy?
-      value = @obj[key]
-      value.capataz_proxy? ? value.capataz_slave : value
+      @obj[key.capataz_slave].capataz_slave
     end
   end
 end
