@@ -64,6 +64,11 @@ module Capataz
 
     end
 
+    def on_pair(node)
+      super
+      decapatize(node.children[1])
+    end
+
     def on_array(node)
       @instruction_counter += 1
       super
