@@ -45,6 +45,10 @@ Capataz.config do
   allowed_constants A
 
   deny_for A, :secret_value
+  
+  maximum_iterations 100
+  
+  maximum_invocations_of '+': 5
 end
 ```
 
@@ -71,6 +75,50 @@ RUBY # 5 (a random value)
 Capataz.eval <<-RUBY
 A.new.secret_value
 RUBY #ERROR: undefined method secret_value for #<A:0x000000022e7960>
+
+Capataz.eval <<-RUBY
+s = 0
+100.times { s += 1 }
+s
+RUBY # 100
+
+Capataz.eval <<-RUBY
+s = 0
+101.times { s += 1 }
+s
+RUBY #ERROR: Maximum allowed iterations exceeded
+
+Capataz.eval <<-RUBY
+s = 0
+10.times { 10.times { s += 1 } }
+s
+RUBY # 100
+
+Capataz.eval <<-RUBY
+s = 0
+11.times { 10.times { s += 1 } }
+s
+RUBY #ERROR: Maximum allowed iterations exceeded
+
+Capataz.eval <<-RUBY
+s = 0
+5.times { s = s + 1 }
+s
+RUBY # 5
+
+Capataz.eval <<-RUBY
+s = 0
+6.times { s = s + 1 }
+s
+RUBY #ERROR: Maximum allowed invocations for '+' exceeded
+
+Capataz.eval <<-RUBY
+[1,2,3,4,5,6].inject(&:+)
+RUBY # 21 (the + operator is invoked 5 times to sum 6 numbers)
+
+Capataz.eval <<-RUBY
+[1,2,3,4,5,6,7].inject(&:+)
+RUBY #ERROR: Maximum allowed invocations for '+' exceeded
 ```
 
 

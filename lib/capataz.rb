@@ -10,13 +10,13 @@ module Capataz
 
     def config(&block)
       @config ||=
-          {
-              denied_declarations: Set.new,
-              allowed_constants: Set.new,
-              denied_methods: Set.new,
-              instances: {},
-              modules: {}
-          }
+        {
+          denied_declarations: Set.new,
+          allowed_constants: Set.new,
+          denied_methods: Set.new,
+          instances: {},
+          modules: {}
+        }
       class_eval(&block) if block
       @config
     end
@@ -31,8 +31,11 @@ module Capataz
       options ||= {}
       options[:halt_on_error] = true if options[:halt_on_error].nil?
       if (locals = options[:locals])
+        locals_initializer = ''
         locals = [locals] unless locals.is_a?(Enumerable)
-        locals.each { |local| code = "#{local} ||= nil\r\n" + code }
+        locals.each { |local| locals_initializer = "#{locals_initializer}#{local} ||= nil\n" }
+        options[:code_start] = locals_initializer.length
+        code = locals_initializer + code
       end
       buffer = Parser::Source::Buffer.new('code')
       buffer.source = code
@@ -40,7 +43,7 @@ module Capataz
         Capataz::Rewriter.new(options).rewrite(buffer, Parser::CurrentRuby.new.parse(buffer))
       rescue Exception => ex
         if (logs = options[:logs]).is_a?(Hash) &&
-            (errors = (logs[:errors] ||= [])).is_a?(Array)
+           (errors = (logs[:errors] ||= [])).is_a?(Array)
           errors << "syntax error: #{ex.message}"
         else
           raise ex
@@ -49,25 +52,36 @@ module Capataz
     end
 
     # config
-    def set_max_allowed_iterations(value)
-      @max_allowed_iteration = value
-    end
-
-    def set_max_allowed_invocations(*pairs)
-
-      unless @max_allowed_invocations
-        @max_allowed_invocations = {}
-      end
-
-      pairs = pairs.slice_when { |i, _| i.is_a?(Integer) or i == :inf }
-
-      pairs.each do |method, value|
-        @max_allowed_invocations[method] = value
+    def maximum_iterations(*args)
+      if args.length == 0
+        @maximum_iterations || :inf
+      else
+        @maximum_iterations = [1, args[0].to_s.to_i].max
       end
     end
 
-    def set_max_allowed_invoc_any(value)
-      @max_allowed_invoc_any = value
+    def maximum_invocations_of(method_or_config)
+      unless @maximum_invocations_of
+        @maximum_invocations_of = {}
+        @maximum_invocations_of.default = :inf
+      end
+      case method_or_config
+      when Hash
+        method_or_config.each do |key, value|
+          @maximum_invocations_of[key.to_s.to_sym] = value.to_s.to_i
+        end
+        @maximum_invocations_of
+      else
+        @maximum_invocations_of[method_or_config.to_s.to_sym]
+      end
+    end
+
+    def maximum_invocations(*args)
+      if args.length == 0
+        @maximum_invocations || :inf
+      else
+        @maximum_invocations = [1, args[0].to_s.to_i].max
+      end
     end
 
     def disable(*args)
@@ -133,33 +147,15 @@ module Capataz
     end
 
     # execution time control
-    def max_allowed_iterations
-      if @max_allowed_iteration
-        @max_allowed_iteration
-      else
-        :inf
+    def check_iteration_counter(count)
+      unless maximum_iterations == :inf
+        fail "ERROR: Maximum allowed iterations exceeded (#{count})" if count > maximum_iterations
       end
     end
 
-    def max_allowed_invocations(method)
-
-      unless @max_allowed_invocations
-        @max_allowed_invocations = {}
-      end
-
-      value = @max_allowed_invocations[method]
-      if value
-        value
-      else
-        :inf
-      end
-    end
-
-    def max_allowed_invoc_any
-      if @max_allowed_invoc_any
-        @max_allowed_invoc_any
-      else
-        :inf
+    def check_invocation_counter(method, count)
+      unless (max = Capataz.maximum_invocations_of(method)) == :inf
+        fail "ERROR: Maximum allowed invocations for '#{method}' exceeded" if count > max
       end
     end
 
@@ -192,7 +188,6 @@ module Capataz
         Capataz::Proxy.new(obj, options)
       end
     end
-
 
 
     def allow_method_overrides
