@@ -212,11 +212,7 @@ module Capataz
       end
 
       if node.type == :send
-        unless Capataz.maximum_invocations == :inf and Capataz.maximum_invocations_of(node.children[1]) == :inf
-          if Capataz.maximum_invocations != :inf
-            Capataz.maximum_invocations_of(node.children[1], Capataz.maximum_invocations)
-          end
-
+        if Capataz.maximum_invocations || Capataz.maximum_invocations_of(node.children[1])
           if @last_signif_node_pos >= 0
             if @last_signif_node_type == :for
               if @curr_branch_nodes[@last_signif_node_pos + 1] == @curr_branch_nodes[@last_signif_node_pos].children[1]
@@ -383,7 +379,7 @@ module Capataz
     end
 
     def decapatize(node)
-      unless  @decapatize_skip_nodes.include?(node) || [:hash, :sym, :str, :int, :true, :false].include?(node.type)
+      unless @decapatize_skip_nodes.include?(node) || [:hash, :sym, :str, :int, :true, :false].include?(node.type)
         @source_rewriter.insert_before_multi(node.location.expression, '(')
         @source_rewriter.insert_after_multi(node.location.expression, ').capataz_slave')
       end
@@ -398,21 +394,21 @@ module Capataz
     end
 
     def inc_block_iter_counter
-      if Capataz.maximum_iterations == :inf
-        ''
-      else
+      if Capataz.maximum_iterations
         @block_iter_counter += 1
         bc = @block_iter_counter
         " ;#{iteration_counter_prefix}#{bc} += 1; ::Capataz.check_iteration_counter(#{iteration_counter_prefix}#{bc}); "
+      else
+        ''
       end
     end
 
     def new_invocation(method)
-      if Capataz.maximum_invocations_of(method) == :inf
-        ''
+      if Capataz.maximum_invocations_of(method)
+        " ;#{invoke_counter_for(method)} += 1; ::Capataz.check_invocation_counter(:#{method}, #{invoke_counter_for(method)}); "
       else
-      " ;#{invoke_counter_for(method)} += 1; ::Capataz.check_invocation_counter(:#{method}, #{invoke_counter_for(method)}); "
-        end
+        ''
+      end
     end
 
     def rewrite_block_symbol_pass(node, len)

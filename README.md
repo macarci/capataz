@@ -86,7 +86,7 @@ Capataz.eval <<-RUBY
 s = 0
 101.times { s += 1 }
 s
-RUBY #ERROR: Maximum allowed iterations exceeded
+RUBY #ERROR: Maximum allowed iterations exceeded (101)
 
 Capataz.eval <<-RUBY
 s = 0
@@ -98,7 +98,7 @@ Capataz.eval <<-RUBY
 s = 0
 11.times { 10.times { s += 1 } }
 s
-RUBY #ERROR: Maximum allowed iterations exceeded
+RUBY #ERROR: Maximum allowed iterations exceeded (101)
 
 Capataz.eval <<-RUBY
 s = 0
@@ -110,15 +110,15 @@ Capataz.eval <<-RUBY
 s = 0
 6.times { s = s + 1 }
 s
-RUBY #ERROR: Maximum allowed invocations for '+' exceeded
+RUBY #ERROR: Maximum allowed invocations for '+' exceeded (6)
 
 Capataz.eval <<-RUBY
 [1,2,3,4,5,6].inject(&:+)
-RUBY # 21 (the + operator is invoked 5 times to sum 6 numbers)
+RUBY # 21 (the + operator is invoked 5 times to summ 6 numbers)
 
 Capataz.eval <<-RUBY
 [1,2,3,4,5,6,7].inject(&:+)
-RUBY #ERROR: Maximum allowed invocations for '+' exceeded
+RUBY #ERROR: Maximum allowed invocations for '+' exceeded (6)
 ```
 
 

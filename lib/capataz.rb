@@ -54,17 +54,14 @@ module Capataz
     # config
     def maximum_iterations(*args)
       if args.length == 0
-        @maximum_iterations || :inf
+        @maximum_iterations
       else
         @maximum_iterations = [1, args[0].to_s.to_i].max
       end
     end
 
     def maximum_invocations_of(method_or_config)
-      unless @maximum_invocations_of
-        @maximum_invocations_of = {}
-        @maximum_invocations_of.default = :inf
-      end
+      @maximum_invocations_of ||= {}
       case method_or_config
       when Hash
         method_or_config.each do |key, value|
@@ -72,13 +69,13 @@ module Capataz
         end
         @maximum_invocations_of
       else
-        @maximum_invocations_of[method_or_config.to_s.to_sym]
+        @maximum_invocations_of[method_or_config.to_s.to_sym] || maximum_invocations
       end
     end
 
     def maximum_invocations(*args)
       if args.length == 0
-        @maximum_invocations || :inf
+        @maximum_invocations
       else
         @maximum_invocations = [1, args[0].to_s.to_i].max
       end
@@ -148,14 +145,14 @@ module Capataz
 
     # execution time control
     def check_iteration_counter(count)
-      unless maximum_iterations == :inf
-        fail "ERROR: Maximum allowed iterations exceeded (#{count})" if count > maximum_iterations
+      if (max = maximum_iterations)
+        fail "ERROR: Maximum allowed iterations exceeded (#{count})" if count > max
       end
     end
 
     def check_invocation_counter(method, count)
-      unless (max = Capataz.maximum_invocations_of(method)) == :inf
-        fail "ERROR: Maximum allowed invocations for '#{method}' exceeded" if count > max
+      if (max = maximum_invocations_of(method))
+        fail "ERROR: Maximum allowed invocations for '#{method}' exceeded (#{count})" if count > max
       end
     end
 
