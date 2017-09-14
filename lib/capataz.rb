@@ -8,17 +8,81 @@ module Capataz
 
   class << self
 
+    def config(&block)
+      @config ||=
+        {
+          denied_declarations: Set.new,
+          allowed_constants: Set.new,
+          denied_methods: Set.new,
+          instances: {},
+          modules: {}
+        }
+      class_eval(&block) if block
+      @config
+    end
+
     def eval(string, *binding_filename_lineno)
       string = rewrite(string)
       super
     end
 
-    def disable(*args)
-      @disable = args.first.to_s.to_i.to_b
+    def rewrite(code, options = {})
+      return code if Capataz.disable?
+      options ||= {}
+      options[:halt_on_error] = true if options[:halt_on_error].nil?
+      if (locals = options[:locals])
+        locals_initializer = ''
+        locals = [locals] unless locals.is_a?(Enumerable)
+        locals.each { |local| locals_initializer = "#{locals_initializer}#{local} ||= nil\n" }
+        options[:code_start] = locals_initializer.length
+        code = locals_initializer + code
+      end
+      buffer = Parser::Source::Buffer.new('code')
+      buffer.source = code
+      begin
+        Capataz::Rewriter.new(options).rewrite(buffer, Parser::CurrentRuby.new.parse(buffer))
+      rescue Exception => ex
+        if (logs = options[:logs]).is_a?(Hash) &&
+           (errors = (logs[:errors] ||= [])).is_a?(Array)
+          errors << "syntax error: #{ex.message}"
+        else
+          raise ex
+        end
+      end
     end
 
-    def disable?
-      @disable
+    # config
+    def maximum_iterations(*args)
+      if args.length == 0
+        @maximum_iterations
+      else
+        @maximum_iterations = [1, args[0].to_s.to_i].max
+      end
+    end
+
+    def maximum_invocations_of(method_or_config)
+      @maximum_invocations_of ||= {}
+      case method_or_config
+      when Hash
+        method_or_config.each do |key, value|
+          @maximum_invocations_of[key.to_s.to_sym] = value.to_s.to_i
+        end
+        @maximum_invocations_of
+      else
+        @maximum_invocations_of[method_or_config.to_s.to_sym] || maximum_invocations
+      end
+    end
+
+    def maximum_invocations(*args)
+      if args.length == 0
+        @maximum_invocations
+      else
+        @maximum_invocations = [1, args[0].to_s.to_i].max
+      end
+    end
+
+    def disable(*args)
+      @disable = args.first.to_s.to_i.to_b
     end
 
     def deny_declarations_of(*symbols)
@@ -52,17 +116,44 @@ module Capataz
       store_options(:modules, :deny, types, options) { |type| type.is_a?(Module) }
     end
 
-    def config(&block)
-      @config ||=
-        {
-          denied_declarations: Set.new,
-          allowed_constants: Set.new,
-          denied_methods: Set.new,
-          instances: {},
-          modules: {}
-        }
-      class_eval(&block) if block
-      @config
+    # compiling time control
+    def disable?
+      @disable
+    end
+
+    def allows_invocation_of(method)
+      method = method.to_s.to_sym unless method.is_a?(Symbol)
+      return false if @config[:denied_methods].include?(method)
+      true
+    end
+
+    def can_declare?(symbol)
+      (set = @config[:denied_declarations]).empty? || !set.include?(symbol)
+    end
+
+    def validate(code)
+      errors = []
+      begin
+        buffer = Parser::Source::Buffer.new('code')
+        buffer.source = code
+        Capataz::Rewriter.new(errors: errors).rewrite(buffer, Parser::CurrentRuby.new.parse(buffer))
+      rescue => ex
+        errors << ex.message
+      end
+      errors
+    end
+
+    # execution time control
+    def check_iteration_counter(count)
+      if (max = maximum_iterations)
+        fail "ERROR: Maximum allowed iterations exceeded (#{count})" if count > max
+      end
+    end
+
+    def check_invocation_counter(method, count)
+      if (max = maximum_invocations_of(method))
+        fail "ERROR: Maximum allowed invocations for '#{method}' exceeded (#{count})" if count > max
+      end
     end
 
     def instance_response_to?(instance, *args)
@@ -81,56 +172,8 @@ module Capataz
       instance.respond_to?(*args)
     end
 
-    def allows_invocation_of(method)
-      method = method.to_s.to_sym unless method.is_a?(Symbol)
-      return false if @config[:denied_methods].include?(method)
-      true
-    end
-
     def allowed_constant?(const)
       (set = @config[:allowed_constants]) && set.include?(const)
-    end
-
-    def can_declare?(symbol)
-      (set = @config[:denied_declarations]).empty? || !set.include?(symbol)
-    end
-
-    def validate(code)
-      errors = []
-      begin
-        buffer = Parser::Source::Buffer.new('code')
-        buffer.source = code
-        ast = Parser::CurrentRuby.new.parse(buffer)
-        Capataz::Rewriter.new(errors: errors).rewrite(buffer, ast)
-      rescue => ex
-        errors << ex.message
-      end
-      errors
-    end
-
-    def rewrite(code, options = {})
-      return code if Capataz.disable?
-      options ||= {}
-      options[:halt_on_error] = true if options[:halt_on_error].nil?
-      if (locals = options[:locals])
-        locals = [locals] unless locals.is_a?(Enumerable)
-        locals.each { |local| code = "#{local} ||= nil\r\n" + code }
-      end
-      buffer = Parser::Source::Buffer.new('code')
-      buffer.source = code
-      begin
-        fail 'unrecognizable code' unless (ast = Parser::CurrentRuby.new.parse(buffer))
-        code = Capataz::Rewriter.new(options).rewrite(buffer, ast)
-      rescue Exception => ex
-        code = nil
-        if (logs = options[:logs]).is_a?(Hash) &&
-          (errors = (logs[:errors] ||= [])).is_a?(Array)
-          errors << "syntax error: #{ex.message}"
-        else
-          raise ex
-        end
-      end
-      code
     end
 
     def handle(obj, options = {})
@@ -143,11 +186,12 @@ module Capataz
       end
     end
 
-    private
 
     def allow_method_overrides
       true #TODO Setup on config
     end
+
+    private
 
     def allowed_method?(options, instance, method)
       if (allow = options[:allow])
