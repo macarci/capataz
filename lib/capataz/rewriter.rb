@@ -124,11 +124,6 @@ module Capataz
     end
 
     def on_block(node)
-      first_range = Parser::Source::Range.new(@source_buffer, node.location.begin.begin_pos, node.location.begin.end_pos)
-      replace(first_range, '{')
-      second_range = Parser::Source::Range.new(@source_buffer, node.location.end.begin_pos, node.location.end.end_pos)
-      replace(second_range, '}')
-
       if node.children[1].children.length > 0
         insert_after(node.children[1].location.end, inc_block_iter_counter)
       else
