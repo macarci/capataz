@@ -177,7 +177,7 @@ module Capataz
     end
 
     def handle(obj, options = {})
-      if obj.capataz_proxy? || [NilClass, Fixnum, Symbol, String, TrueClass, FalseClass].any? { |type| obj.is_a?(type) }
+      if obj.capataz_proxy? || [NilClass, Integer, Symbol, String, TrueClass, FalseClass].any? { |type| obj.is_a?(type) }
         obj
       elsif obj.is_a?(Hash)
         Capataz::HashProxy.new(obj)
