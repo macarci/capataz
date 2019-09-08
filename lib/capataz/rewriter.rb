@@ -11,6 +11,7 @@ module Capataz
       @logs = options[:logs] || {}
       @self_linker = options[:self_linker]
       @self_send_prefixer = options[:self_send_prefixer]
+      @links = options[:links] || {}
 
       @block_iter_counter = 0
 
@@ -198,11 +199,15 @@ module Capataz
       if (left = node.children[0])
         capatize(left)
       elsif node.type == :send
-        unless @self_linker.link?(method_name)
-          report_error("error linking #{method_name}")
-        end if @self_linker
+        link = nil
+        if @self_linker
+          unless (link = @self_linker.link(method_name))
+            report_error("error linking #{method_name}")
+          end
+        end
         (@logs[:self_sends] ||= Set.new) << method_name
         prefix = @self_send_prefixer ? @self_send_prefixer.prefix(method_name, @self_linker) : ''
+        @links["#{prefix}#{method_name}"] = link
         insert_before(node.location.expression, "::Capataz.handle(self).#{prefix}")
       end
 
