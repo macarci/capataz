@@ -13,6 +13,7 @@ module Capataz
         {
           denied_declarations: Set.new,
           allowed_constants: Set.new,
+          allowed_methods: Set.new,
           denied_methods: Set.new,
           instances: {},
           modules: {}
@@ -93,6 +94,10 @@ module Capataz
       symbol_array_store(:denied_methods, methods)
     end
 
+    def allow_invoke_of(*methods)
+      symbol_array_store(:allowed_methods, methods)
+    end
+
     def allowed_constants(*constants)
       set = @config[:allowed_constants]
       constants = [constants] unless constants.is_a?(Enumerable)
@@ -160,12 +165,14 @@ module Capataz
       fail ArgumentError if args.length == 0
       method = args[0].is_a?(Symbol) ? args[0] : args[0].to_s.to_sym
       return false if @config[:denied_methods].include?(method)
-      if (options = @config[:instances][instance])
-        return false unless allowed_method?(options, instance, method)
-      else
-        @config[:modules].each do |type, opts|
-          if instance.is_a?(type)
-            return false unless allowed_method?(opts, instance, method)
+      unless @config[:allowed_methods].include?(method)
+        if (options = @config[:instances][instance])
+          return false unless allowed_method?(options, instance, method)
+        else
+          @config[:modules].each do |type, opts|
+            if instance.is_a?(type)
+              return false unless allowed_method?(opts, instance, method)
+            end
           end
         end
       end
