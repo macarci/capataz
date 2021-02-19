@@ -64,13 +64,13 @@ module Capataz
     def maximum_invocations_of(method_or_config)
       @maximum_invocations_of ||= {}
       case method_or_config
-      when Hash
-        method_or_config.each do |key, value|
-          @maximum_invocations_of[key.to_s.to_sym] = value.to_s.to_i
-        end
-        @maximum_invocations_of
-      else
-        @maximum_invocations_of[method_or_config.to_s.to_sym] || maximum_invocations
+        when Hash
+          method_or_config.each do |key, value|
+            @maximum_invocations_of[key.to_s.to_sym] = value.to_s.to_i
+          end
+          @maximum_invocations_of
+        else
+          @maximum_invocations_of[method_or_config.to_s.to_sym] || maximum_invocations
       end
     end
 
@@ -137,15 +137,17 @@ module Capataz
     end
 
     def validate(code)
-      errors = []
       begin
         buffer = Parser::Source::Buffer.new('code')
         buffer.source = code
-        Capataz::Rewriter.new(errors: errors).rewrite(buffer, Parser::CurrentRuby.new.parse(buffer))
+        ast = Parser::CurrentRuby.new.parse(buffer)
+        fail 'is not a valid Ruby syntax' unless ast
+        logs = {}
+        Capataz::Rewriter.new(logs: logs).rewrite(buffer, ast)
+        logs[:errors] || []
       rescue => ex
-        errors << ex.message
+        [ex.message]
       end
-      errors
     end
 
     # execution time control

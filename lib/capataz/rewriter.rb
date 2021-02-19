@@ -90,7 +90,7 @@ module Capataz
     def rewrite(source_buffer, ast)
       @source_buffer = source_buffer
 
-      @logs.clear
+      logs.clear
       @capatized_nodes.clear
       @source_rewriter = Capataz::SourceRewriter.new(source_buffer)
 
@@ -205,7 +205,7 @@ module Capataz
             report_error("error linking #{method_name}")
           end
         end
-        (@logs[:self_sends] ||= Set.new) << method_name
+        (logs[:self_sends] ||= Set.new) << method_name
         prefix = @self_send_prefixer ? @self_send_prefixer.prefix(method_name, @self_linker) : ''
         @links["#{prefix}#{method_name}"] = link
         insert_before(node.location.expression, "::Capataz.handle(self).#{prefix}")
